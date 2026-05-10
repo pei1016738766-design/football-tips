@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>综合赛事推荐专家 - 每日赛事分析</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: "微软雅黑", sans-serif; }
+        body { background: #f5f7fa; padding: 15px; }
+        .title { text-align: center; font-size: 22px; font-weight: bold; color: #d81e1e; margin: 15px 0; }
+        .match-card { background: white; border-radius: 12px; padding: 15px; margin-bottom: 12px; box-shadow: 0 2px 8px #00000010; position: relative; }
+        .team { font-size: 16px; font-weight: bold; color: #222; margin-bottom: 8px; }
+        .time { font-size: 12px; color: #666; margin-bottom: 10px; }
+        .result { background: #f9f9f9; padding: 10px; border-radius: 8px; margin-top: 8px; font-size: 14px; }
+        .label { color: #d81e1e; font-weight: bold; }
+        .add-btn { display: block; width: 100%; background: #d81e1e; color: white; border: none; border-radius: 8px; padding: 12px; font-size: 16px; cursor: pointer; margin: 20px 0; }
+        .card-actions { position: absolute; top: 10px; right: 10px; display: flex; gap: 8px; }
+        .edit-btn, .delete-btn { border: none; border-radius: 4px; padding: 4px 8px; font-size: 12px; cursor: pointer; }
+        .edit-btn { background: #4CAF50; color: white; }
+        .delete-btn { background: #f44336; color: white; }
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); justify-content: center; align-items: center; }
+        .modal-content { background: white; padding: 20px; border-radius: 12px; width: 90%; max-width: 400px; }
+        .modal-content input { width: 100%; padding: 10px; margin: 8px 0; border: 1px solid #ddd; border-radius: 6px; }
+        .modal-content button { width: 48%; padding: 10px; border: none; border-radius: 6px; cursor: pointer; }
+        .save-btn { background: #d81e1e; color: white; }
+        .cancel-btn { background: #ccc; }
+    </style>
+</head>
+<body>
+    <div class="title">⚽🏀 综合赛事推荐专家（每日实时更新）</div>
+    <button class="add-btn" onclick="openModal()">+ 添加新赛事</button>
+    <div id="matchList"></div>
+
+    <div class="modal" id="modal">
+        <div class="modal-content">
+            <h3 id="modalTitle">添加新赛事</h3>
+            <input type="hidden" id="editId">
+            <input type="text" id="teamA" placeholder="主队">
+            <input type="text" id="teamB" placeholder="客队">
+            <input type="text" id="leagueTime" placeholder="联赛/时间（如：英超 20:00）">
+            <input type="text" id="recommend" placeholder="推荐结果（如：主胜）">
+            <input type="text" id="score" placeholder="比分参考（如：2-0 / 1-1）">
+            <input type="text" id="overUnder" placeholder="大小球/分（如：大2.5 / 大218.5分）">
+            <div style="display: flex; gap: 10px; margin-top: 15px;">
+                <button class="save-btn" onclick="saveMatch()">保存</button>
+                <button class="cancel-btn" onclick="closeModal()">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 防XSS转义
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // 初始数据（已修正译名和格式）
+        const initialMatches = [
+            {id:1,teamA:"洛杉矶湖人",teamB:"俄克拉荷马城雷霆",leagueTime:"NBA 西半决 G3 | 08:30",recommend:"雷霆胜",score:"103-112 / 106-109",overUnder:"大218.5分"},
+            {id:2,teamA:"维罗纳",teamB:"科莫",leagueTime:"意甲 | 18:30",recommend:"科莫胜",score:"0-2 / 1-2",overUnder:"小2.5球"},
+            {id:3,teamA:"辽宁铁人",teamB:"云南玉昆",leagueTime:"中超 | 19:00",recommend:"云南玉昆胜",score:"0-2 / 1-2",overUnder:"大2.5球"},
+            {id:4,teamA:"夏洛特FC",teamB:"辛辛那提FC",leagueTime:"美职联 | 07:30",recommend:"辛辛那提FC胜",score:"1-2 / 1-1",overUnder:"大2.5球"}
+        ];
+
+        // 加载数据
+        let matches = JSON.parse(localStorage.getItem('matches')) || initialMatches;
+        let nextId = Math.max(0, ...matches.map(m => m.id)) + 1;
+
+        // 渲染列表（顺序正常）
+        function renderMatches() {
+            const list = document.getElementById('matchList');
+            list.innerHTML = '';
+            matches.forEach(match => {
+                const card = document.createElement('div');
+                card.className = 'match-card';
+                card.dataset.id = match.id;
+                card.innerHTML = `
+                    <div class="card-actions">
+                        <button class="edit-btn" onclick="openEditModal(${match.id})">编辑</button>
+                        <button class="delete-btn" onclick="deleteMatch(${match.id})">删除</button>
+                    </div>
+                    <div class="team">${escapeHtml(match.teamA)} VS ${escapeHtml(match.teamB)}</div>
+                    <div class="time">${escapeHtml(match.leagueTime)}</div>
+                    <div class="result">
+                        <span class="label">推荐：</span>${escapeHtml(match.recommend)}<br>
+                        <span class="label">比分：</span>${escapeHtml(match.score)}<br>
+                        <span class="label">${match.overUnder.includes('分') ? '大小分' : '大小球'}：</span>${escapeHtml(match.overUnder.replace(/[分球]$/, ''))}
+                    </div>
+                `;
+                list.appendChild(card);
+            });
+        }
+
+        // 保存数据
+        function saveToStorage() {
+            localStorage.setItem('matches', JSON.stringify(matches));
+        }
+
+        // 弹窗操作
+        function openModal() {
+            document.getElementById('modalTitle').textContent = '添加新赛事';
+            document.getElementById('editId').value = '';
+            ['teamA','teamB','leagueTime','recommend','score','overUnder'].forEach(id=>document.getElementById(id).value='');
+            document.getElementById('modal').style.display = 'flex';
+        }
+        function openEditModal(id) {
+            const match = matches.find(m=>m.id===id);
+            if(!match)return;
+            document.getElementById('modalTitle').textContent = '编辑赛事';
+            document.getElementById('editId').value = id;
+            document.getElementById('teamA').value = match.teamA;
+            document.getElementById('teamB').value = match.teamB;
+            document.getElementById('leagueTime').value = match.leagueTime;
+            document.getElementById('recommend').value = match.recommend;
+            document.getElementById('score').value = match.score;
+            document.getElementById('overUnder').value = match.overUnder;
+            document.getElementById('modal').style.display = 'flex';
+        }
+        function closeModal() {
+            document.getElementById('modal').style.display = 'none';
+        }
+
+        // 保存比赛
+        function saveMatch() {
+            const editId = document.getElementById('editId').value;
+            const teamA = document.getElementById('teamA').value.trim();
+            const teamB = document.getElementById('teamB').value.trim();
+            const leagueTime = document.getElementById('leagueTime').value.trim();
+            const recommend = document.getElementById('recommend').value.trim();
+            const score = document.getElementById('score').value.trim();
+            const overUnder = document.getElementById('overUnder').value.trim();
+
+            if(!teamA||!teamB||!leagueTime||!recommend||!score||!overUnder){alert('请填写完整信息！');return;}
+
+            if(editId){
+                const idx = matches.findIndex(m=>m.id===parseInt(editId));
+                if(idx!==-1) matches[idx] = {...matches[idx],teamA,teamB,leagueTime,recommend,score,overUnder};
+            }else{
+                matches.push({id:nextId++,teamA,teamB,leagueTime,recommend,score,overUnder});
+            }
+            saveToStorage();renderMatches();closeModal();
+        }
+
+        // 删除比赛
+        function deleteMatch(id) {
+            if(confirm('确定要删除这场赛事吗？')){
+                matches = matches.filter(m=>m.id!==id);
+                saveToStorage();renderMatches();
+            }
+        }
+
+        // 初始化
+        renderMatches();
+    </script>
+</body>
+</html>
